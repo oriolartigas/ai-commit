@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { execSync } from 'child_process';
 import { resolveProvider, generateCommitMessage, fetchAvailableModels, getProviderDefinition } from './providers';
-import type { ResolvedProvider } from './providers';
+import type { ProviderDefinition, ResolvedProvider } from './providers';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -15,9 +15,20 @@ export function activate(context: vscode.ExtensionContext) {
             // Get configuration
             const config = vscode.workspace.getConfiguration("aiCommit");
 
-            // Resolve the provider (and its plan, e.g. opencode go/zen/console)
-            const providerId = config.get<string>("provider") || "groq";
-            const planId = config.get<string>("plan");
+            // Resolve the provider
+            const providerId = config.get<string>("provider") || "opencode";
+            const definition = getProviderDefinition(providerId);
+
+            // If the provider has plans, ask which one to use (it determines the model list)
+            let planId = config.get<string>("plan");
+            if (definition.plans && definition.plans.length > 0) {
+                const selectedPlan = await pickPlan(definition, planId);
+                if (selectedPlan) {
+                    planId = selectedPlan;
+                    await config.update("plan", planId, vscode.ConfigurationTarget.Global);
+                }
+            }
+
             const provider = resolveProvider(providerId, planId);
 
             // Resolve base URL (custom providers require their own)
@@ -112,34 +123,17 @@ export function activate(context: vscode.ExtensionContext) {
     const selectPlan = vscode.commands.registerCommand("aiCommit.selectPlan", async () => {
         try {
             const config = vscode.workspace.getConfiguration("aiCommit");
-            const providerId = config.get<string>("provider") || "groq";
+            const providerId = config.get<string>("provider") || "opencode";
             const definition = getProviderDefinition(providerId);
 
-            const plans = definition.plans;
-            if (!plans || plans.length === 0) {
-                vscode.window.showInformationMessage(`${definition.label} doesn't have selectable plans.`);
+            const selectedPlan = await pickPlan(definition, config.get<string>("plan"));
+            if (!selectedPlan) {
                 return;
             }
 
-            const currentPlan = config.get<string>("plan");
-            const idByLabel = new Map(plans.map(plan => [plan.label, plan.id]));
-            const items = plans.map(plan => ({
-                label: plan.label,
-                description: plan.baseUrl,
-                picked: plan.id === currentPlan
-            }));
-
-            const selected = await vscode.window.showQuickPick(items, {
-                placeHolder: `Select a plan for ${definition.label}`,
-                ignoreFocusOut: true
-            });
-
-            if (!selected) {
-                return;
-            }
-
-            await config.update("plan", idByLabel.get(selected.label), vscode.ConfigurationTarget.Global);
-            vscode.window.showInformationMessage(`Plan set to ${selected.label}`);
+            await config.update("plan", selectedPlan, vscode.ConfigurationTarget.Global);
+            const label = definition.plans?.find(plan => plan.id === selectedPlan)?.label ?? selectedPlan;
+            vscode.window.showInformationMessage(`Plan set to ${label}`);
 
         } catch (error: any) {
             vscode.window.showErrorMessage(`AI Commit Error: ${error.message}`);
@@ -151,6 +145,28 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
+
+async function pickPlan(definition: ProviderDefinition, currentPlanId: string | undefined): Promise<string | undefined> {
+    const plans = definition.plans;
+    if (!plans || plans.length === 0) {
+        vscode.window.showInformationMessage(`${definition.label} doesn't have selectable plans.`);
+        return undefined;
+    }
+
+    const idByLabel = new Map(plans.map(plan => [plan.label, plan.id]));
+    const items = plans.map(plan => ({
+        label: plan.label,
+        description: plan.baseUrl,
+        picked: plan.id === currentPlanId
+    }));
+
+    const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: `Select a plan for ${definition.label}`,
+        ignoreFocusOut: true
+    });
+
+    return selected ? idByLabel.get(selected.label) : undefined;
+}
 
 async function resolveModel(
     config: vscode.WorkspaceConfiguration,
