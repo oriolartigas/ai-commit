@@ -1,15 +1,15 @@
 {
-  "name": "groq-commit", 
-  "displayName": "Groq Commit AI",
+  "name": "ai-commit",
+  "displayName": "AI Commit",
   "version": "1.0.0",
   "publisher": "OriolArtigas",
   "author": "Oriol Artigas",
   "repository": {
     "type": "git",
-    "url": "https://github.com/oriolartigas/groq-commit.git"
+    "url": "https://github.com/oriolartigas/ai-commit.git"
   },
   "license": "ISC",
-  "description": "Automate your commit messages with a single click using Groq's ultra-fast AI models.",
+  "description": "Automate your commit messages with a single click using Groq, OpenCode or any OpenAI-compatible AI provider.",
   "type": "commonjs",
   "main": "./out/extension.js",
   "engines": {
@@ -21,29 +21,63 @@
   "contributes": {
     "commands": [
       {
-        "command": "groqCommit.generate",
-        "title": "Generate Commit Groq",
+        "command": "aiCommit.generate",
+        "title": "Generate Commit AI",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "aiCommit.selectPlan",
+        "title": "AI Commit: Select Plan"
       }
     ],
     "menus": {
       "scm/title": [
         {
-          "command": "groqCommit.generate",
+          "command": "aiCommit.generate",
           "group": "navigation@100",
           "when": "scmProvider == git"
         }
       ]
     },
     "configuration": {
-      "title": "Groq Commit AI",
+      "title": "AI Commit",
       "properties": {
-        "groqCommit.apiKey": {
+        "aiCommit.provider": {
+          "type": "string",
+          "default": "opencode",
+          "enum": [
+            "groq",
+            "opencode",
+            "custom"
+          ],
+          "description": "AI provider to use. 'custom' lets you point to any OpenAI-compatible API."
+        },
+        "aiCommit.plan": {
+          "type": "string",
+          "default": "go",
+          "enum": [
+            "go",
+            "zen",
+            "console"
+          ],
+          "description": "Plan of the selected provider (only providers with plans use it, e.g. OpenCode go/zen/console)."
+        },
+        "aiCommit.apiKey": {
           "type": "string",
           "default": "",
-          "description": "Groq API Key"
+          "description": "API Key of the selected provider"
         },
-        "groqCommit.language": {
+        "aiCommit.customBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of a custom OpenAI-compatible API (only used when provider is 'custom')."
+        },
+        "aiCommit.customModel": {
+          "type": "string",
+          "default": "",
+          "description": "Model to use with the custom provider (only used when provider is 'custom')."
+        },
+        "aiCommit.language": {
           "type": "string",
           "default": "English",
           "enum": [
@@ -57,16 +91,10 @@
           ],
           "description": "Language used to generate commit messages"
         },
-        "groqCommit.model": {
+        "aiCommit.model": {
           "type": "string",
-          "default": "groq/compound-mini",
-          "enum": [
-            "llama-3.3-70b-versatile",
-            "groq/compound-mini",
-            "openai/gpt-oss-120b",
-            "meta-llama/llama-4-scout-17b-16e-instruct"
-          ],
-          "description": "Groq model to use."
+          "default": "",
+          "description": "Model to use. Leave empty to choose it from the provider's available models."
         }
       }
     }
