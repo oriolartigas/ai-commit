@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
 import { execSync } from 'child_process';
+import { randomUUID } from 'crypto';
 import { resolveProvider, generateCommitMessage, fetchAvailableModels, getProviderDefinition } from './providers';
 import type { ProviderDefinition, ResolvedProvider } from './providers';
 
 let outputChannel: vscode.OutputChannel;
+
+const SESSION_ID_KEY = "sessionId";
 
 export function activate(context: vscode.ExtensionContext) {
     // Create an output channel to log errors and status
@@ -19,14 +22,21 @@ export function activate(context: vscode.ExtensionContext) {
             const providerId = config.get<string>("provider") || "opencode";
             const definition = getProviderDefinition(providerId);
 
-            // If the provider has plans, ask which one to use (it determines the model list)
-            let planId = config.get<string>("plan");
+            // If the provider has plans, use the configured one or ask for it the first time
+            let planId = config.get<string>("plan") || "";
             if (definition.plans && definition.plans.length > 0) {
-                const selectedPlan = await pickPlan(definition, planId);
-                if (selectedPlan) {
-                    planId = selectedPlan;
-                    await config.update("plan", planId, vscode.ConfigurationTarget.Global);
+                const validPlan = definition.plans.some(plan => plan.id === planId);
+                if (!validPlan) {
+                    const selectedPlan = await pickPlan(definition, planId || undefined);
+                    if (selectedPlan) {
+                        planId = selectedPlan;
+                        await config.update("plan", planId, vscode.ConfigurationTarget.Global);
+                    }
                 }
+            } else if (planId) {
+                // Providers without plans must keep the plan field empty
+                planId = "";
+                await config.update("plan", "", vscode.ConfigurationTarget.Global);
             }
 
             const provider = resolveProvider(providerId, planId);
@@ -62,8 +72,15 @@ export function activate(context: vscode.ExtensionContext) {
 
             const language = config.get<string>("language") || "English";
 
+            // Stable session id so OpenCode Go can optimize routing and prompt caching
+            let sessionId = context.globalState.get<string>(SESSION_ID_KEY);
+            if (!sessionId) {
+                sessionId = randomUUID();
+                await context.globalState.update(SESSION_ID_KEY, sessionId);
+            }
+
             // Resolve the model: use the configured one, or ask the provider for its available models
-            const model = await resolveModel(config, resolvedProvider, apiKey!);
+            const model = await resolveModel(config, resolvedProvider, apiKey!, sessionId);
 
             // Get Git API
             const gitExtension = vscode.extensions.getExtension('vscode.git');
@@ -103,6 +120,7 @@ export function activate(context: vscode.ExtensionContext) {
                 const commitMessage = await generateCommitMessage({
                     provider: resolvedProvider,
                     apiKey: apiKey!,
+                    sessionId,
                     model,
                     diff,
                     language,
@@ -171,7 +189,8 @@ async function pickPlan(definition: ProviderDefinition, currentPlanId: string | 
 async function resolveModel(
     config: vscode.WorkspaceConfiguration,
     provider: ResolvedProvider,
-    apiKey: string
+    apiKey: string,
+    sessionId: string
 ): Promise<string> {
     const configured = config.get<string>("model");
     if (configured && configured.trim() !== "") {
@@ -184,7 +203,7 @@ async function resolveModel(
             title: `${provider.label}: Fetching available models...`,
             cancellable: false
         }, async () => {
-            return await fetchAvailableModels(provider, apiKey, outputChannel);
+            return await fetchAvailableModels(provider, apiKey, sessionId, outputChannel);
         });
 
         if (models.length === 0) {
