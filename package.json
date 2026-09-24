@@ -1,15 +1,15 @@
 {
-  "name": "groq-commit", 
-  "displayName": "Groq Commit AI",
+  "name": "ai-commit",
+  "displayName": "AI Commit",
   "version": "1.0.0",
   "publisher": "OriolArtigas",
   "author": "Oriol Artigas",
   "repository": {
     "type": "git",
-    "url": "https://github.com/oriolartigas/groq-commit.git"
+    "url": "https://github.com/oriolartigas/ai-commit.git"
   },
   "license": "ISC",
-  "description": "Automate your commit messages with a single click using Groq's ultra-fast AI models.",
+  "description": "Automate your commit messages with a single click using Groq, OpenCode or any OpenAI-compatible AI provider.",
   "type": "commonjs",
   "main": "./out/extension.js",
   "engines": {
@@ -21,29 +21,29 @@
   "contributes": {
     "commands": [
       {
-        "command": "groqCommit.generate",
-        "title": "Generate Commit Groq",
+        "command": "aiCommit.generate",
+        "title": "Generate Commit AI",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "aiCommit.selectPlan",
+        "title": "AI Commit: Select Plan"
       }
     ],
     "menus": {
       "scm/title": [
         {
-          "command": "groqCommit.generate",
+          "command": "aiCommit.generate",
           "group": "navigation@100",
           "when": "scmProvider == git"
         }
       ]
     },
     "configuration": {
-      "title": "Groq Commit AI",
+      "title": "AI Commit",
       "properties": {
-        "groqCommit.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Groq API Key"
-        },
-        "groqCommit.language": {
+        "aiCommit.language": {
+          "order": 1,
           "type": "string",
           "default": "English",
           "enum": [
@@ -57,16 +57,40 @@
           ],
           "description": "Language used to generate commit messages"
         },
-        "groqCommit.model": {
+        "aiCommit.provider": {
+          "order": 2,
           "type": "string",
-          "default": "groq/compound-mini",
+          "default": "opencode",
           "enum": [
-            "llama-3.3-70b-versatile",
-            "groq/compound-mini",
-            "openai/gpt-oss-120b",
-            "meta-llama/llama-4-scout-17b-16e-instruct"
+            "groq",
+            "opencode",
+            "custom"
           ],
-          "description": "Groq model to use."
+          "description": "AI provider to use. 'custom' lets you point to any OpenAI-compatible API."
+        },
+        "aiCommit.plan": {
+          "order": 3,
+          "type": "string",
+          "default": "",
+          "description": "Plan of the selected provider (e.g. go/zen/console for OpenCode). Leave empty. Managed automatically; set it with the 'AI Commit: Select Plan' command."
+        },
+        "aiCommit.model": {
+          "order": 4,
+          "type": "string",
+          "default": "",
+          "description": "Model to use. Leave empty to choose it from the provider's available models."
+        },
+        "aiCommit.customBaseUrl": {
+          "order": 5,
+          "type": "string",
+          "default": "",
+          "description": "Base URL of a custom OpenAI-compatible API (only used when provider is 'custom')."
+        },
+        "aiCommit.apiKey": {
+          "order": 6,
+          "type": "string",
+          "default": "",
+          "description": "API Key of the selected provider"
         }
       }
     }
@@ -79,17 +103,15 @@
     "lint": "eslint .",
     "package": "vsce package",
     "publish": "vsce publish"
-    
   },
   "keywords": [],
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^4.0.0",
     "eslint": "^9.16.0",
-    "typescript-eslint": "^8.18.0",
     "typescript": "^5.3.0",
-    "@vscode/vsce": "^3.7.1"
+    "typescript-eslint": "^8.18.0"
   },
   "extensionDependencies": [
     "vscode.git"

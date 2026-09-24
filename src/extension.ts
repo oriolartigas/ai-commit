@@ -1,30 +1,69 @@
 import * as vscode from 'vscode';
 import { execSync } from 'child_process';
+import { randomUUID } from 'crypto';
+import { resolveProvider, generateCommitMessage, fetchAvailableModels, getProviderDefinition } from './providers';
+import type { ProviderDefinition, ResolvedProvider } from './providers';
 
 let outputChannel: vscode.OutputChannel;
 
+const SESSION_ID_KEY = "sessionId";
+
 export function activate(context: vscode.ExtensionContext) {
     // Create an output channel to log errors and status
-    outputChannel = vscode.window.createOutputChannel("Groq Commit");
+    outputChannel = vscode.window.createOutputChannel("AI Commit");
     context.subscriptions.push(outputChannel);
 
-    const generateCommit = vscode.commands.registerCommand("groqCommit.generate", async () => {
+    const generateCommit = vscode.commands.registerCommand("aiCommit.generate", async () => {
         try {
             // Get configuration
-            const config = vscode.workspace.getConfiguration("groqCommit");
-            
+            const config = vscode.workspace.getConfiguration("aiCommit");
+
+            // Resolve the provider
+            const providerId = config.get<string>("provider") || "opencode";
+            const definition = getProviderDefinition(providerId);
+
+            // If the provider has plans, use the configured one or ask for it the first time
+            let planId = config.get<string>("plan") || "";
+            if (definition.plans && definition.plans.length > 0) {
+                const validPlan = definition.plans.some(plan => plan.id === planId);
+                if (!validPlan) {
+                    const selectedPlan = await pickPlan(definition, planId || undefined);
+                    if (selectedPlan) {
+                        planId = selectedPlan;
+                        await config.update("plan", planId, vscode.ConfigurationTarget.Global);
+                    }
+                }
+            } else if (planId) {
+                // Providers without plans must keep the plan field empty
+                planId = "";
+                await config.update("plan", "", vscode.ConfigurationTarget.Global);
+            }
+
+            const provider = resolveProvider(providerId, planId);
+
+            // Resolve base URL (custom providers require their own)
+            let baseUrl = provider.baseUrl;
+            if (provider.needsBaseUrl) {
+                baseUrl = config.get<string>("customBaseUrl") || "";
+                if (!baseUrl || baseUrl.trim() === "") {
+                    vscode.window.showErrorMessage("Custom provider: set 'aiCommit.customBaseUrl' first.");
+                    return;
+                }
+            }
+            const resolvedProvider = { ...provider, baseUrl };
+
             // Check API Key
             let apiKey = config.get<string>("apiKey");
             if (!apiKey || apiKey.trim() === "") {
                 apiKey = await vscode.window.showInputBox({
-                    prompt: "Enter your Groq API Key",
-                    placeHolder: "gsk_...",
+                    prompt: resolvedProvider.apiKeyMessage,
+                    placeHolder: resolvedProvider.apiKeyPlaceholder,
                     ignoreFocusOut: true,
                     password: true
                 });
 
                 if (!apiKey) {
-                    vscode.window.showErrorMessage("Groq API Key is required.");
+                    vscode.window.showErrorMessage(`${resolvedProvider.label} API Key is required.`);
                     return;
                 }
                 // Save the key globally
@@ -32,7 +71,16 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             const language = config.get<string>("language") || "English";
-            const model = config.get<string>("model") || "llama-3.3-70b-versatile";
+
+            // Stable session id so OpenCode Go can optimize routing and prompt caching
+            let sessionId = context.globalState.get<string>(SESSION_ID_KEY);
+            if (!sessionId) {
+                sessionId = randomUUID();
+                await context.globalState.update(SESSION_ID_KEY, sessionId);
+            }
+
+            // Resolve the model: use the configured one, or ask the provider for its available models
+            const model = await resolveModel(config, resolvedProvider, apiKey!, sessionId);
 
             // Get Git API
             const gitExtension = vscode.extensions.getExtension('vscode.git');
@@ -54,14 +102,14 @@ export function activate(context: vscode.ExtensionContext) {
             // Generate message with Progress UI
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: `Groq AI: Generating commit in ${language}...`,
+                title: `${resolvedProvider.label}: Generating commit in ${language}...`,
                 cancellable: true
             }, async (progress, token) => {
-                
+
                 // Get the diff of staged changes
-                const diff = execSync("git diff --cached", { 
-                    cwd: repo.rootUri.fsPath, 
-                    encoding: "utf8" 
+                const diff = execSync("git diff --cached", {
+                    cwd: repo.rootUri.fsPath,
+                    encoding: "utf8"
                 });
 
                 if (!diff) {
@@ -69,85 +117,122 @@ export function activate(context: vscode.ExtensionContext) {
                     return;
                 }
 
-                const MAX_DIFF_LENGTH = 15000;
+                const commitMessage = await generateCommitMessage({
+                    provider: resolvedProvider,
+                    apiKey: apiKey!,
+                    sessionId,
+                    model,
+                    diff,
+                    language,
+                    token,
+                    outputChannel
+                });
 
-                if (diff.length > MAX_DIFF_LENGTH) {
-                    vscode.window.showErrorMessage("The length of the diff is too large.");
-                    return;
-                }
-
-                const commitMessage = await callGroqAPI(apiKey!, diff, language, model, token);
-                
                 if (commitMessage) {
                     repo.inputBox.value = commitMessage;
                 }
             });
 
         } catch (error: any) {
-            vscode.window.showErrorMessage(`Groq Commit Error: ${error.message}`);
+            vscode.window.showErrorMessage(`AI Commit Error: ${error.message}`);
         }
     });
 
+    const selectPlan = vscode.commands.registerCommand("aiCommit.selectPlan", async () => {
+        try {
+            const config = vscode.workspace.getConfiguration("aiCommit");
+            const providerId = config.get<string>("provider") || "opencode";
+            const definition = getProviderDefinition(providerId);
+
+            const selectedPlan = await pickPlan(definition, config.get<string>("plan"));
+            if (!selectedPlan) {
+                return;
+            }
+
+            await config.update("plan", selectedPlan, vscode.ConfigurationTarget.Global);
+            const label = definition.plans?.find(plan => plan.id === selectedPlan)?.label ?? selectedPlan;
+            vscode.window.showInformationMessage(`Plan set to ${label}`);
+
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`AI Commit Error: ${error.message}`);
+        }
+    });
+
+    context.subscriptions.push(selectPlan);
     context.subscriptions.push(generateCommit);
 }
 
-async function callGroqAPI(
-    apiKey: string, 
-    diff: string, 
-    language: string, 
-    model: string, 
-    token: vscode.CancellationToken
-): Promise<string | null> {
-    
-    try {
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                model: model,
-                messages: [
-                    {
-                        role: "system",
-                        content: 
-                        `You are an expert git commit assistant. 
-                        Your task is to generate a commit message strictly in ${language} using this EXACT structure:
-                        
-                        1. A subject line: <type>: <short summary>
-                        2. A BLANK LINE (mandatory).
-                        3. A short, concise description of changes (max 10 lines).
+export function deactivate() {}
 
-                        Rules:
-                        - Types: feat, fix, chore, docs, test, style, refactor.
-                        - Summary: Maximum 50 characters.
-                        - Description: Use bullet points for multiple changes. Focus on "what" and "why".
-                        - IMPORTANT: You must include a double newline between the subject line and the description.`
-                    },
-                    {
-                        role: "user",
-                        content: `Generate a commit message for this diff:\n\n${diff}`
-                    }
-                ],
-                temperature: 0.2
-            })
-        });
-
-        if (token.isCancellationRequested) return null;
-
-        if (!response.ok) {
-            const errorData: any = await response.json();
-            throw new Error(errorData.error?.message || `API Error ${response.status}`);
-        }
-
-        const data: any = await response.json();
-        return data.choices[0]?.message?.content?.trim() || null;
-
-    } catch (error: any) {
-        outputChannel.appendLine(`❌ Fetch Error: ${error.message}`);
-        throw error;
+async function pickPlan(definition: ProviderDefinition, currentPlanId: string | undefined): Promise<string | undefined> {
+    const plans = definition.plans;
+    if (!plans || plans.length === 0) {
+        vscode.window.showInformationMessage(`${definition.label} doesn't have selectable plans.`);
+        return undefined;
     }
+
+    const idByLabel = new Map(plans.map(plan => [plan.label, plan.id]));
+    const items = plans.map(plan => ({
+        label: plan.label,
+        description: plan.baseUrl,
+        picked: plan.id === currentPlanId
+    }));
+
+    const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: `Select a plan for ${definition.label}`,
+        ignoreFocusOut: true
+    });
+
+    return selected ? idByLabel.get(selected.label) : undefined;
 }
 
-export function deactivate() {}
+async function resolveModel(
+    config: vscode.WorkspaceConfiguration,
+    provider: ResolvedProvider,
+    apiKey: string,
+    sessionId: string
+): Promise<string> {
+    const configured = config.get<string>("model");
+    if (configured && configured.trim() !== "") {
+        return configured;
+    }
+
+    try {
+        const models = await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `${provider.label}: Fetching available models...`,
+            cancellable: false
+        }, async () => {
+            return await fetchAvailableModels(provider, apiKey, sessionId, outputChannel);
+        });
+
+        if (models.length === 0) {
+            throw new Error("The provider returned no models.");
+        }
+
+        const selected = await vscode.window.showQuickPick(models, {
+            placeHolder: "Select a model",
+            ignoreFocusOut: true
+        });
+
+        if (!selected) {
+            throw new Error("No model selected.");
+        }
+
+        // Remember the choice so the user is not asked every time
+        await config.update("model", selected, vscode.ConfigurationTarget.Global);
+        return selected;
+
+    } catch (error: any) {
+        // Fallback: let the user type the model id manually
+        const manual = await vscode.window.showInputBox({
+            prompt: "Could not load the model list. Enter the model id manually (or Esc to cancel)",
+            ignoreFocusOut: true
+        });
+
+        if (!manual || manual.trim() === "") {
+            throw error;
+        }
+        return manual.trim();
+    }
+}
