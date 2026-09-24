@@ -43,18 +43,17 @@ In **Settings** > **Extensions** > **AI Commit**:
 | Setting | Description |
 | --- | --- |
 | `aiCommit.provider` | Provider to use: `groq`, `opencode` or `custom`. |
-| `aiCommit.plan` | Plan of the selected provider, e.g. OpenCode `go`/`zen`/`console`. |
+| `aiCommit.plan` | Plan of the selected provider (managed automatically). |
 | `aiCommit.apiKey` | API Key of the selected provider. |
 | `aiCommit.language` | Default language for the commit message. |
 | `aiCommit.model` | Model override. Leave empty to pick it from the provider's available models. |
 | `aiCommit.customBaseUrl` | Base URL for a custom OpenAI-compatible API (e.g. `https://api.openai.com/v1`, `http://localhost:11434/v1` for Ollama). |
-| `aiCommit.customModel` | Model for the custom provider, e.g. `gpt-4o`, `llama3`. |
 
 ### Providers and endpoints
 
 Every provider exposes an OpenAI-compatible `/models` endpoint, so the available models are fetched live instead of being hardcoded. If `aiCommit.model` is empty, a picker with the current models is shown the first time and the choice is remembered.
 
-Plans (e.g. OpenCode go/zen/console) are provider metadata, not an API. Use the **`AI Commit: Select Plan`** command (command palette) to list and change the plan of the selected provider.
+Plans (e.g. OpenCode go/zen/console) are provider metadata, not an API. They are not a setting: use the **`AI Commit: Select Plan`** command (command palette) to list and pick the plan of the selected provider.
 
 | Provider | Plan | Base URL |
 | --- | --- | --- |

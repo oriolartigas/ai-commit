@@ -98,12 +98,14 @@ export function getProviderDefinition(providerId: string | undefined): ProviderD
 export async function fetchAvailableModels(
     provider: ResolvedProvider,
     apiKey: string,
+    sessionId: string,
     outputChannel: vscode.OutputChannel
 ): Promise<string[]> {
     try {
         const response = await fetch(`${provider.baseUrl}/models`, {
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
+                "x-opencode-session": sessionId,
                 "User-Agent": "ai-commit/1.0.0"
             }
         });
@@ -129,6 +131,7 @@ export async function fetchAvailableModels(
 export interface GenerateOptions {
     provider: ResolvedProvider;
     apiKey: string;
+    sessionId: string;
     model: string;
     diff: string;
     language: string;
@@ -137,13 +140,14 @@ export interface GenerateOptions {
 }
 
 export async function generateCommitMessage(options: GenerateOptions): Promise<string | null> {
-    const { provider, apiKey, model, diff, language, token, outputChannel } = options;
+    const { provider, apiKey, sessionId, model, diff, language, token, outputChannel } = options;
 
     try {
         const response = await fetch(`${provider.baseUrl}/chat/completions`, {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
+                "x-opencode-session": sessionId,
                 "Content-Type": "application/json",
                 "User-Agent": "ai-commit/1.0.0"
             },

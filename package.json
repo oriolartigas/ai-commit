@@ -42,42 +42,8 @@
     "configuration": {
       "title": "AI Commit",
       "properties": {
-        "aiCommit.provider": {
-          "type": "string",
-          "default": "opencode",
-          "enum": [
-            "groq",
-            "opencode",
-            "custom"
-          ],
-          "description": "AI provider to use. 'custom' lets you point to any OpenAI-compatible API."
-        },
-        "aiCommit.plan": {
-          "type": "string",
-          "default": "go",
-          "enum": [
-            "go",
-            "zen",
-            "console"
-          ],
-          "description": "Plan of the selected provider (only providers with plans use it, e.g. OpenCode go/zen/console)."
-        },
-        "aiCommit.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "API Key of the selected provider"
-        },
-        "aiCommit.customBaseUrl": {
-          "type": "string",
-          "default": "",
-          "description": "Base URL of a custom OpenAI-compatible API (only used when provider is 'custom')."
-        },
-        "aiCommit.customModel": {
-          "type": "string",
-          "default": "",
-          "description": "Model to use with the custom provider (only used when provider is 'custom')."
-        },
         "aiCommit.language": {
+          "order": 1,
           "type": "string",
           "default": "English",
           "enum": [
@@ -91,10 +57,40 @@
           ],
           "description": "Language used to generate commit messages"
         },
+        "aiCommit.provider": {
+          "order": 2,
+          "type": "string",
+          "default": "opencode",
+          "enum": [
+            "groq",
+            "opencode",
+            "custom"
+          ],
+          "description": "AI provider to use. 'custom' lets you point to any OpenAI-compatible API."
+        },
+        "aiCommit.plan": {
+          "order": 3,
+          "type": "string",
+          "default": "",
+          "description": "Plan of the selected provider (e.g. go/zen/console for OpenCode). Leave empty. Managed automatically; set it with the 'AI Commit: Select Plan' command."
+        },
         "aiCommit.model": {
+          "order": 4,
           "type": "string",
           "default": "",
           "description": "Model to use. Leave empty to choose it from the provider's available models."
+        },
+        "aiCommit.customBaseUrl": {
+          "order": 5,
+          "type": "string",
+          "default": "",
+          "description": "Base URL of a custom OpenAI-compatible API (only used when provider is 'custom')."
+        },
+        "aiCommit.apiKey": {
+          "order": 6,
+          "type": "string",
+          "default": "",
+          "description": "API Key of the selected provider"
         }
       }
     }
